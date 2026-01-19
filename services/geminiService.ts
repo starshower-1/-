@@ -3,12 +3,11 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { CompanyInfo, BusinessPlanData } from "../types";
 
 export async function generateBusinessPlan(info: CompanyInfo): Promise<BusinessPlanData> {
-  // Always create a fresh instance right before the call to ensure the latest API key is used.
-  // Obtain apiKey exclusively from process.env.API_KEY.
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
-  const prompt = `
-    다음 기업 정보를 바탕으로 한국의 '초기창업패키지' PSST 규격에 맞는 전문적인 사업계획서를 작성해줘.
+  const textPart = {
+    text: `
+    다음 기업 정보와 첨부된 파일(이미지/PDF 분석 내용)을 바탕으로 한국의 '초기창업패키지' PSST 규격에 맞는 전문적인 사업계획서를 작성해줘.
     
     [기업 정보]
     1. 기업명: ${info.companyName}
@@ -18,31 +17,37 @@ export async function generateBusinessPlan(info: CompanyInfo): Promise<BusinessP
     5. 대표 및 조직: ${info.teamInfo}
     6. 기타 부연 설명: ${info.additionalInfo}
 
-    [작성 가이드라인]
+    [작성 핵심 요구사항 - 분량 대폭 확대]
     - 반드시 한국어로 작성할 것.
-    - 반드시 전문적인 '개조식'(-, 1., 가. 등 기호 활용)으로 작성하여 가독성을 극대화할 것.
-    - 각 주요 섹션(문제인식, 실현가능성, 성장전략)은 딥 리서치를 수행하여 구체적인 시장 수치, 기술적 트렌드, 산업 현황을 포함할 것.
-    - 각 섹션의 설명 텍스트는 최소 800자에서 1,200자 사이의 풍부한 분량으로 상세히 기술할 것.
-    - JSON 응답 형식을 엄격히 준수하고, 절대 중간에 끊기지 않도록 논리적으로 완결할 것.
-    - 전문적인 사업가 및 심사위원의 시각에서 설득력 있게 작성할 것.
-    - 1억원 규모의 정부지원금 활용 계획(재료비, 외주비 등)을 사실적인 산출 근거와 함께 수립할 것.
+    - 반드시 전문적인 '개조식'(-, 1., 가. 등 기호 활용)으로 작성할 것.
+    - **중요: 각 주요 섹션(문제인식, 실현가능성, 성장전략 등)의 설명 텍스트를 현재보다 약 3배 이상 풍부하게(각 항목당 2,500자 이상 목표) 작성할 것.**
+    - 첨부된 파일이 있다면 그 내용을 깊이 있게 분석하여 계획서에 반영할 것.
+    - PTSTI 분석, 5-Forces 분석, SWOT 분석 등 경영 전략 프레임워크를 개조식 내에 상세히 녹여낼 것.
+    - 시장 규모 데이터(TAM/SAM/SOM), 기술적 구현 로드맵, 연차별 고용 및 매출 목표를 매우 구체적으로 제시할 것.
+    - JSON 응답 형식을 엄격히 준수할 것.
 
     [구조 상세 요구]
-    - summary: 과제 소개, 차별성, 목표 시장, 성과 달성 목표
-    - problem: 개발 동기(PTSTI 분석: Policy, Technology, Social, Trend, Industry), 목적 및 필요성 (매우 상세히)
-    - solution: 개발 방안, 단계별 협력 계획, 1억 예산 추진내용(표 데이터), 고객 대응, 경쟁사 분석 (매우 상세히)
-    - scaleUp: 자금조달(투자/융자/정책), 1억 상세 집행 계획(정부70%, 자부담30% 비중 반영), 내수/해외 시장 조사(그래프용 숫자 데이터 포함), 진출 전략 (매우 상세히)
-    - team: 대표자 역량, 인원 현황, 고용 계획, ESG 실현 방안 (상세 기술)
-  `;
+    - summary: 과제 소개, 차별성, 목표 시장, 성과 달성 목표 (매우 상세히)
+    - problem: 개발 동기, 목적 및 필요성 (사회적/기술적/경제적 측면에서 3배 분량으로 상세 기술)
+    - solution: 개발 방안, 단계별 협력 계획, 예산 추진내용, 고객 대응, 경쟁사 분석 (실제 구현 시나리오를 포함하여 3배 분량 기술)
+    - scaleUp: 자금조달, 집행 계획, 내수/해외 시장 조사, 진출 전략 (구체적인 수치와 5개년 로드맵 포함)
+    - team: 대표자 및 팀원 역량, 고용 계획, ESG 경영 실천 방안 (상세 기술)
+  `};
+
+  const attachmentParts = (info.attachments || []).map(att => ({
+    inlineData: {
+      data: att.data,
+      mimeType: att.mimeType
+    }
+  }));
 
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
-      contents: prompt,
+      contents: { parts: [textPart, ...attachmentParts] },
       config: {
-        // High maxOutputTokens to accommodate the requested 1,000 characters per section
-        maxOutputTokens: 16384, 
-        thinkingConfig: { thinkingBudget: 8000 },
+        maxOutputTokens: 32768, // Maximize for 3x content
+        thinkingConfig: { thinkingBudget: 16000 },
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -154,32 +159,39 @@ export async function generateBusinessPlan(info: CompanyInfo): Promise<BusinessP
     return JSON.parse(text);
   } catch (error: any) {
     console.error("Gemini API Error:", error);
-    // If the error looks like it might be a truncation or format issue, throw a specific message
     if (error instanceof SyntaxError) {
-      throw new Error("보고서 데이터가 너무 방대하여 생성 중 일부가 누락되었습니다. 조금 더 구체적인 핵심 정보를 입력하시거나 다시 시도해 주세요.");
+      throw new Error("보고서 분량이 너무 방대하여 처리 중 형식이 손상되었습니다. 다시 시도해 주세요.");
     }
     throw error;
   }
 }
 
 export async function generateImages(info: CompanyInfo): Promise<string[]> {
-  // Use named parameter for apiKey and obtain exclusively from process.env.API_KEY.
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const images: string[] = [];
   
-  // High quality prompts for realistic views as requested
   const prompts = [
-    `Realistic 3D architectural rendering of ${info.businessItem} product concept. Sharp detail, cinematic high-tech laboratory background, professional studio lighting, 8K photorealistic.`,
-    `Close-up macroscopic high-quality photo of ${info.businessItem} core technology components and engineering assembly. Realistic materials, depth of field, professional tech photography.`,
-    `A high-resolution realistic photo showing ${info.targetAudience} using ${info.businessItem} in a modern, professional business environment. Natural light, sharp focus, authentic commercial style.`,
-    `A wide-angle realistic corporate scene showing ${info.businessItem} being utilized in a daily workflow within a clean, high-tech office. Photorealistic, high quality.`
+    `Realistic 3D architectural rendering of ${info.businessItem}. Referencing the provided documents for technical details. Sharp detail, professional laboratory background, 8K photorealistic.`,
+    `Close-up macroscopic photo of the core technology from ${info.businessItem}. Engineering assembly, realistic materials, studio lighting.`,
+    `Realistic photo of ${info.targetAudience} using ${info.businessItem} in a real-world scenario. Sharp focus, natural lighting, professional photography.`,
+    `Implementation scene of ${info.businessItem} at a corporate or industrial site. Highly detailed, high-end corporate style.`
   ];
+
+  const attachmentParts = (info.attachments || [])
+    .filter(att => att.mimeType.startsWith('image/'))
+    .slice(0, 2) // Use first 2 images as visual reference
+    .map(att => ({
+      inlineData: {
+        data: att.data,
+        mimeType: att.mimeType
+      }
+    }));
 
   for (const p of prompts) {
     try {
       const response = await ai.models.generateContent({
         model: 'gemini-3-pro-image-preview',
-        contents: { parts: [{ text: p }] },
+        contents: { parts: [{ text: p }, ...attachmentParts] },
         config: {
           imageConfig: {
             aspectRatio: "16:9",
@@ -196,7 +208,7 @@ export async function generateImages(info: CompanyInfo): Promise<string[]> {
         }
       }
     } catch (e) {
-      console.error("Image generation failed for prompt:", p, e);
+      console.error("Image generation failed:", e);
     }
   }
 

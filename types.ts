@@ -1,4 +1,9 @@
 
+export interface Attachment {
+  data: string;
+  mimeType: string;
+}
+
 export interface CompanyInfo {
   companyName: string;
   businessItem: string;
@@ -6,6 +11,7 @@ export interface CompanyInfo {
   targetAudience: string;
   teamInfo: string;
   additionalInfo: string;
+  attachments?: Attachment[];
 }
 
 export interface MarketData {
