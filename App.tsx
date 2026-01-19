@@ -15,25 +15,42 @@ const App: React.FC = () => {
   const [showResult, setShowResult] = useState(false);
   const [hasKey, setHasKey] = useState(false);
 
-  useEffect(() => {
-    const checkKey = async () => {
-      if (window.aistudio?.hasSelectedApiKey) {
-        const selected = await window.aistudio.hasSelectedApiKey();
-        setHasKey(selected);
-      }
-    };
-    checkKey();
+  // API 키 선택 여부 확인
+  const checkKeyStatus = useCallback(async () => {
+    if (window.aistudio?.hasSelectedApiKey) {
+      const selected = await window.aistudio.hasSelectedApiKey();
+      setHasKey(selected);
+    }
   }, []);
+
+  useEffect(() => {
+    checkKeyStatus();
+    // 주기적으로 체크하여 상태 동기화 (선택 창이 외부 팝업이므로)
+    const interval = setInterval(checkKeyStatus, 2000);
+    return () => clearInterval(interval);
+  }, [checkKeyStatus]);
 
   const handleOpenKeyDialog = async () => {
     if (window.aistudio?.openSelectKey) {
-      await window.aistudio.openSelectKey();
-      // Assume success as per guidelines to avoid race condition
-      setHasKey(true);
+      try {
+        await window.aistudio.openSelectKey();
+        // 가이드라인에 따라 선택 트리거 후 즉시 성공으로 가정하여 사용자 경험 개선
+        setHasKey(true);
+      } catch (e) {
+        console.error("Key selection failed:", e);
+      }
+    } else {
+      alert("API 키 선택 기능을 사용할 수 없는 환경입니다.");
     }
   };
 
   const handleGenerate = async (info: CompanyInfo) => {
+    // 생성 전 키 확인 (사용자에게 안내)
+    if (!hasKey) {
+      const confirm = window.confirm("API 키가 연결되지 않은 상태일 수 있습니다. 계속하시겠습니까?\n(오류 발생 시 상단 'API 연결' 버튼을 클릭해 주세요)");
+      if (!confirm) return;
+    }
+
     setIsLoading(true);
     setPlanData(null);
     setImages([]);
@@ -54,11 +71,11 @@ const App: React.FC = () => {
       }
     } catch (error: any) {
       console.error("Failed to generate plan:", error);
-      if (error.message?.includes("Requested entity was not found")) {
-        alert("API 키 인증에 실패했습니다. 키를 다시 선택해주세요.");
+      if (error.message?.includes("Requested entity was not found") || error.message?.includes("API_KEY")) {
+        alert("API 키 인증에 실패했습니다. 상단의 API 연결 버튼을 통해 키를 다시 선택해주세요.");
         setHasKey(false);
       } else if (error.message?.includes("JSON")) {
-        alert("데이터 생성량이 너무 많아 오류가 발생했습니다. 내용을 조금 더 구체화하여 다시 시도해주세요.");
+        alert("데이터 생성량이 너무 많아 오류가 발생했습니다. 입력 내용을 조금 더 구체화하여 다시 시도해주세요.");
       } else {
         alert(`계획서 생성 중 오류가 발생했습니다: ${error.message || "알 수 없는 오류"}`);
       }
@@ -80,60 +97,6 @@ const App: React.FC = () => {
     };
     html2pdf().set(opt).from(element).save();
   }, [planData]);
-
-  // Mandatory API Key Selection Screen
-  if (!hasKey) {
-    return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl overflow-hidden">
-          <div className="bg-slate-800 p-8 text-center">
-            <div className="inline-flex items-center justify-center w-20 h-20 bg-blue-600 rounded-2xl shadow-lg mb-6 transform rotate-3">
-              <span className="text-white font-black text-3xl">SS</span>
-            </div>
-            <h1 className="text-2xl font-black text-white mb-2 tracking-tight">AI 사업계획서 생성기</h1>
-            <p className="text-slate-400 text-sm">고품질 리서치 및 이미지 생성을 시작합니다.</p>
-          </div>
-          <div className="p-8">
-            <div className="space-y-4 mb-8">
-              <div className="flex items-start">
-                <div className="flex-shrink-0 mt-1">
-                  <svg className="w-5 h-5 text-green-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/></svg>
-                </div>
-                <p className="ml-3 text-sm text-slate-600">압도적 분량의 딥 리서치 엔진 가동</p>
-              </div>
-              <div className="flex items-start">
-                <div className="flex-shrink-0 mt-1">
-                  <svg className="w-5 h-5 text-green-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/></svg>
-                </div>
-                <p className="ml-3 text-sm text-slate-600">첨부파일 기반의 맞춤형 실사 이미지 생성</p>
-              </div>
-              <div className="flex items-start">
-                <div className="flex-shrink-0 mt-1">
-                  <svg className="w-5 h-5 text-green-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/></svg>
-                </div>
-                <p className="ml-3 text-sm text-slate-600">전문 PSST 규격 자동 최적화</p>
-              </div>
-            </div>
-            
-            <p className="text-xs text-slate-400 mb-6 leading-relaxed">
-              본 서비스는 Gemini 3 Pro의 고성능 모델을 사용하며, 원활한 이용을 위해 유료 프로젝트의 API 키 선택이 필요합니다.
-              <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noreferrer" className="text-blue-600 hover:underline ml-1 font-bold">
-                결제 문서 확인
-              </a>
-            </p>
-
-            <button
-              onClick={handleOpenKeyDialog}
-              className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-xl transition-all transform hover:-translate-y-1 active:scale-95 flex items-center justify-center"
-            >
-              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
-              API 키 선택 후 시작하기
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   if (showResult && planData) {
     return (
@@ -178,11 +141,23 @@ const App: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center space-x-4">
-            <div className="flex items-center text-xs bg-green-100 text-green-700 px-3 py-1.5 rounded-full font-bold border border-green-200">
-              <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
-              API 키 연결됨
-            </div>
-            <div className="text-sm font-bold text-slate-600 hidden sm:block">
+            {/* API 키 연결 배지 - 클릭 가능하도록 수정 */}
+            <button 
+              onClick={handleOpenKeyDialog}
+              className={`flex items-center text-xs px-4 py-2 rounded-full font-bold border transition-all transform hover:scale-105 active:scale-95 shadow-sm ${
+                hasKey 
+                ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100' 
+                : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 animate-pulse'
+              }`}
+              title="클릭하여 API 키를 설정하거나 변경하세요"
+            >
+              <span className={`w-2 h-2 rounded-full mr-2 ${hasKey ? 'bg-green-500' : 'bg-amber-500'}`}></span>
+              {hasKey ? 'API 키 연결됨' : 'API 키 연결 필요'}
+              <svg className="w-3 h-3 ml-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            <div className="text-sm font-bold text-slate-600 hidden md:block">
               (주)소셜위즈 파트너십
             </div>
           </div>
@@ -226,6 +201,11 @@ const App: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4">
           <p className="text-slate-800 font-extrabold text-lg mb-1">SS창업경영연구소</p>
           <p className="text-slate-500 text-sm mb-4">(주)소셜위즈 - SocialWiz Inc. Partnership</p>
+          <div className="flex justify-center space-x-4 text-xs text-blue-600 mb-4">
+            <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noreferrer" className="hover:underline">Google Billing 가이드</a>
+            <span className="text-slate-300">|</span>
+            <button onClick={handleOpenKeyDialog} className="hover:underline">API 키 재설정</button>
+          </div>
           <p className="text-slate-400 text-xs">© 2024 SS Builder Deep. Powered by Google Gemini 3 Pro.</p>
         </div>
       </footer>
