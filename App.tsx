@@ -13,36 +13,38 @@ const App: React.FC = () => {
   const [planData, setPlanData] = useState<BusinessPlanData | null>(null);
   const [images, setImages] = useState<string[]>([]);
   const [showResult, setShowResult] = useState(false);
-  const [hasKey, setHasKey] = useState(false);
+  
+  // Vercel 환경 변수 또는 AI Studio 브릿지 존재 여부에 따른 초기 키 상태 설정
+  const [hasKey, setHasKey] = useState(() => {
+    const envKey = process.env.API_KEY;
+    return !!(envKey && envKey !== "undefined" && envKey.length > 5);
+  });
 
-  // 현재 환경이 AI Studio 샌드박스 내부인지 확인
   const isAiStudioEnv = typeof window !== 'undefined' && !!window.aistudio;
 
   const checkKeyStatus = useCallback(async () => {
-    // 1. Vercel 등 시스템 환경 변수에 API_KEY가 이미 주입된 경우
-    const envKey = process.env.API_KEY;
-    if (envKey && envKey !== "undefined" && envKey.length > 5) {
-      setHasKey(true);
-      return;
-    }
+    // 이미 키가 있다면 (Vercel 환경 변수 등) 추가 체크 불필요
+    if (hasKey) return;
 
-    // 2. AI Studio 환경인 경우 브릿지 객체로 체크
+    // AI Studio 환경인 경우에만 브릿지 체크
     if (isAiStudioEnv && window.aistudio.hasSelectedApiKey) {
       try {
         const selected = await window.aistudio.hasSelectedApiKey();
         setHasKey(selected);
       } catch (e) {
-        console.debug("Bridge check failed");
+        console.debug("Bridge check skipped");
       }
     }
-  }, [isAiStudioEnv]);
+  }, [hasKey, isAiStudioEnv]);
 
   useEffect(() => {
     checkKeyStatus();
-    // 환경 변수나 브릿지 상태가 변할 수 있으므로 주기적 체크 (Vercel은 보통 고정임)
-    const interval = setInterval(checkKeyStatus, 3000);
-    return () => clearInterval(interval);
-  }, [checkKeyStatus]);
+    // AI Studio 환경에서 키 선택 상태가 바뀔 수 있으므로 주기적 체크
+    if (isAiStudioEnv) {
+      const interval = setInterval(checkKeyStatus, 3000);
+      return () => clearInterval(interval);
+    }
+  }, [checkKeyStatus, isAiStudioEnv]);
 
   const handleOpenKeyDialog = async (e?: React.MouseEvent) => {
     if (e) {
@@ -50,6 +52,7 @@ const App: React.FC = () => {
       e.stopPropagation();
     }
     
+    // AI Studio 환경에서만 다이얼로그 호출
     if (isAiStudioEnv && window.aistudio.openSelectKey) {
       try {
         await window.aistudio.openSelectKey();
@@ -57,22 +60,16 @@ const App: React.FC = () => {
       } catch (err) {
         console.error("Failed to open key dialog:", err);
       }
-    } else {
-      // Standalone 환경(Vercel 등)에서 키가 없는 경우에 대한 안내
-      if (!hasKey) {
-        alert("Vercel 환경 변수(API_KEY)가 설정되지 않았습니다. 관리자에게 문의하거나 AI Studio 환경에서 실행해 주세요.");
-      }
+    } else if (!hasKey) {
+      // Vercel 환경인데 키가 없는 경우에만 안내
+      alert("API_KEY가 설정되지 않았습니다. Vercel 환경 변수 설정을 확인해주세요.");
     }
   };
 
   const handleGenerate = async (info: CompanyInfo) => {
     if (!hasKey) {
-      if (isAiStudioEnv) {
-        alert("상단 'AI 엔진 연결' 버튼을 눌러 API 키를 선택해 주세요.");
-        handleOpenKeyDialog();
-      } else {
-        alert("API 키가 구성되지 않았습니다. Vercel Dashboard에서 API_KEY 환경 변수를 설정해 주세요.");
-      }
+      alert("AI 엔진이 연결되지 않았습니다.");
+      if (isAiStudioEnv) handleOpenKeyDialog();
       return;
     }
 
@@ -97,9 +94,14 @@ const App: React.FC = () => {
       const msg = error.message || "";
       
       if (msg.includes("Requested entity was not found") || msg.includes("401") || msg.includes("403")) {
-        setHasKey(false);
-        alert("API 키 권한 오류가 발생했습니다. 키 설정을 다시 확인해 주세요.");
-        if (isAiStudioEnv) handleOpenKeyDialog();
+        // 키 권한 문제 발생 시에만 상태 업데이트
+        if (isAiStudioEnv) {
+          setHasKey(false);
+          alert("API 키 인증에 실패했습니다. 키를 다시 선택해주세요.");
+          handleOpenKeyDialog();
+        } else {
+          alert("Vercel에 설정된 API_KEY가 유효하지 않거나 권한이 없습니다.");
+        }
       } else {
         alert(`생성 중 오류 발생: ${msg}`);
       }
@@ -111,7 +113,6 @@ const App: React.FC = () => {
   const handleDownloadPDF = useCallback(() => {
     if (!planData) return;
     const element = document.getElementById('plan-container');
-    // planData의 summary나 기업명을 파일명으로 사용
     const fileName = planData.summary.introduction.split(' ')[0] || 'BusinessPlan';
     const opt = {
       margin: 10,
@@ -163,12 +164,12 @@ const App: React.FC = () => {
           </div>
           
           <div className="flex items-center">
-            {/* AI Studio 환경이거나, 혹은 Standalone에서 키가 아직 없는 경우에만 버튼 표시 */}
-            {(isAiStudioEnv || !hasKey) && (
+            {/* AI Studio 환경이거나, 키가 아예 없는 경우에만 연결 버튼 표시 */}
+            {isAiStudioEnv || !hasKey ? (
               <button 
                 type="button"
                 onClick={handleOpenKeyDialog}
-                className={`relative z-[110] flex items-center text-xs px-5 py-2.5 rounded-full font-bold border transition-all shadow-md active:scale-95 cursor-pointer hover:shadow-lg ${
+                className={`flex items-center text-xs px-5 py-2.5 rounded-full font-bold border transition-all shadow-md active:scale-95 cursor-pointer hover:shadow-lg ${
                   hasKey 
                   ? 'bg-green-600 text-white border-green-700' 
                   : 'bg-white text-blue-600 border-blue-200 ring-2 ring-blue-50 hover:bg-blue-50'
@@ -179,7 +180,7 @@ const App: React.FC = () => {
                     <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                     </svg>
-                    엔진 연결됨
+                    AI 엔진 연결됨
                   </>
                 ) : (
                   <>
@@ -188,11 +189,11 @@ const App: React.FC = () => {
                   </>
                 )}
               </button>
-            )}
-            {!isAiStudioEnv && hasKey && (
+            ) : (
+              // Vercel 환경변수로 작동 중일 때 보여줄 깔끔한 배지
               <div className="flex items-center text-xs px-5 py-2.5 rounded-full font-bold bg-slate-100 text-slate-600 border border-slate-200">
                 <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
-                시스템 엔진 가동중
+                시스템 엔진 활성
               </div>
             )}
           </div>
