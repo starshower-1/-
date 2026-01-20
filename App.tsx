@@ -1,9 +1,10 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { CompanyInfo, BusinessPlanData } from './types';
 import { generateBusinessPlan, generateImages } from './services/geminiService';
 import BusinessPlanForm from './components/BusinessPlanForm';
 import BusinessPlanView from './components/BusinessPlanView';
+import ApiKeyModal from './components/ApiKeyModal';
 
 declare const html2pdf: any;
 
@@ -12,17 +13,31 @@ const App: React.FC = () => {
   const [planData, setPlanData] = useState<BusinessPlanData | null>(null);
   const [images, setImages] = useState<string[]>([]);
   const [showResult, setShowResult] = useState(false);
+  const [isApiModalOpen, setIsApiModalOpen] = useState(false);
+  const [userApiKey, setUserApiKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    const savedKey = localStorage.getItem('gemini_api_key');
+    if (savedKey) setUserApiKey(savedKey);
+  }, []);
 
   const handleGenerate = async (info: CompanyInfo) => {
+    const activeKey = userApiKey || process.env.API_KEY;
+    
+    if (!activeKey || activeKey === "undefined") {
+      alert("API 키 설정이 필요합니다.");
+      setIsApiModalOpen(true);
+      return;
+    }
+
     setIsLoading(true);
     setPlanData(null);
     setImages([]);
     
     try {
-      // Vercel 환경 변수 process.env.API_KEY를 사용하여 직접 호출
       const [data, imgs] = await Promise.all([
-        generateBusinessPlan(info),
-        generateImages(info)
+        generateBusinessPlan(info, activeKey),
+        generateImages(info, activeKey)
       ]);
       
       if (data) {
@@ -91,9 +106,28 @@ const App: React.FC = () => {
               <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-none">PSST Builder Deep v2.0</span>
             </div>
           </div>
-          <div className="flex items-center text-xs px-4 py-2 rounded-full font-bold bg-green-50 text-green-700 border border-green-100">
-            <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
-            AI 엔진 가동 중
+          
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => setIsApiModalOpen(true)}
+              className="p-2.5 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl border border-slate-200 transition-all active:scale-95 shadow-sm"
+              title="API 설정"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </button>
+            <div className={`flex items-center text-xs px-4 py-2 rounded-full font-bold border transition-all ${
+              userApiKey || (process.env.API_KEY && process.env.API_KEY !== "undefined")
+              ? 'bg-green-50 text-green-700 border-green-100' 
+              : 'bg-red-50 text-red-700 border-red-100'
+            }`}>
+              <div className={`w-2 h-2 rounded-full mr-2 ${
+                userApiKey || (process.env.API_KEY && process.env.API_KEY !== "undefined") ? 'bg-green-500' : 'bg-red-500 animate-pulse'
+              }`}></div>
+              {userApiKey || (process.env.API_KEY && process.env.API_KEY !== "undefined") ? 'AI 엔진 가동 중' : 'API 키 필요'}
+            </div>
           </div>
         </div>
       </nav>
@@ -137,6 +171,12 @@ const App: React.FC = () => {
           </div>
         </div>
       </footer>
+
+      <ApiKeyModal 
+        isOpen={isApiModalOpen} 
+        onClose={() => setIsApiModalOpen(false)} 
+        onSave={(key) => setUserApiKey(key)}
+      />
     </div>
   );
 };
