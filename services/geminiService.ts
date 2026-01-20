@@ -4,12 +4,11 @@ import { CompanyInfo, BusinessPlanData } from "../types";
 
 /**
  * 사업계획서 생성 함수
- * 호출 직전에 새로운 GoogleGenAI 인스턴스를 생성하여 선택된 API 키가 즉시 반영되도록 함
  */
 export async function generateBusinessPlan(info: CompanyInfo): Promise<BusinessPlanData> {
   const apiKey = process.env.API_KEY;
   if (!apiKey || apiKey === "undefined" || apiKey.trim() === "") {
-    throw new Error("API_KEY_MISSING");
+    throw new Error("환경 변수 API_KEY가 설정되지 않았습니다.");
   }
 
   const ai = new GoogleGenAI({ apiKey: apiKey });
@@ -151,7 +150,6 @@ export async function generateBusinessPlan(info: CompanyInfo): Promise<BusinessP
     if (!text) throw new Error("AI 응답을 생성하지 못했습니다.");
     return JSON.parse(text);
   } catch (error: any) {
-    if (error.message === "API_KEY_MISSING") throw error;
     console.error("Gemini API Error:", error);
     throw error;
   }

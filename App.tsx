@@ -1,83 +1,25 @@
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { CompanyInfo, BusinessPlanData } from './types';
 import { generateBusinessPlan, generateImages } from './services/geminiService';
 import BusinessPlanForm from './components/BusinessPlanForm';
 import BusinessPlanView from './components/BusinessPlanView';
 
 declare const html2pdf: any;
-declare const window: any;
 
 const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [planData, setPlanData] = useState<BusinessPlanData | null>(null);
   const [images, setImages] = useState<string[]>([]);
   const [showResult, setShowResult] = useState(false);
-  
-  // Vercel 환경 변수 또는 AI Studio 브릿지 존재 여부에 따른 초기 키 상태 설정
-  const [hasKey, setHasKey] = useState(() => {
-    const envKey = process.env.API_KEY;
-    return !!(envKey && envKey !== "undefined" && envKey.length > 5);
-  });
-
-  const isAiStudioEnv = typeof window !== 'undefined' && !!window.aistudio;
-
-  const checkKeyStatus = useCallback(async () => {
-    // 이미 키가 있다면 (Vercel 환경 변수 등) 추가 체크 불필요
-    if (hasKey) return;
-
-    // AI Studio 환경인 경우에만 브릿지 체크
-    if (isAiStudioEnv && window.aistudio.hasSelectedApiKey) {
-      try {
-        const selected = await window.aistudio.hasSelectedApiKey();
-        setHasKey(selected);
-      } catch (e) {
-        console.debug("Bridge check skipped");
-      }
-    }
-  }, [hasKey, isAiStudioEnv]);
-
-  useEffect(() => {
-    checkKeyStatus();
-    // AI Studio 환경에서 키 선택 상태가 바뀔 수 있으므로 주기적 체크
-    if (isAiStudioEnv) {
-      const interval = setInterval(checkKeyStatus, 3000);
-      return () => clearInterval(interval);
-    }
-  }, [checkKeyStatus, isAiStudioEnv]);
-
-  const handleOpenKeyDialog = async (e?: React.MouseEvent) => {
-    if (e) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-    
-    // AI Studio 환경에서만 다이얼로그 호출
-    if (isAiStudioEnv && window.aistudio.openSelectKey) {
-      try {
-        await window.aistudio.openSelectKey();
-        setHasKey(true);
-      } catch (err) {
-        console.error("Failed to open key dialog:", err);
-      }
-    } else if (!hasKey) {
-      // Vercel 환경인데 키가 없는 경우에만 안내
-      alert("API_KEY가 설정되지 않았습니다. Vercel 환경 변수 설정을 확인해주세요.");
-    }
-  };
 
   const handleGenerate = async (info: CompanyInfo) => {
-    if (!hasKey) {
-      alert("AI 엔진이 연결되지 않았습니다.");
-      if (isAiStudioEnv) handleOpenKeyDialog();
-      return;
-    }
-
     setIsLoading(true);
     setPlanData(null);
     setImages([]);
     
     try {
+      // Vercel 환경 변수 process.env.API_KEY를 사용하여 직접 호출
       const [data, imgs] = await Promise.all([
         generateBusinessPlan(info),
         generateImages(info)
@@ -91,20 +33,7 @@ const App: React.FC = () => {
       }
     } catch (error: any) {
       console.error("Generation error:", error);
-      const msg = error.message || "";
-      
-      if (msg.includes("Requested entity was not found") || msg.includes("401") || msg.includes("403")) {
-        // 키 권한 문제 발생 시에만 상태 업데이트
-        if (isAiStudioEnv) {
-          setHasKey(false);
-          alert("API 키 인증에 실패했습니다. 키를 다시 선택해주세요.");
-          handleOpenKeyDialog();
-        } else {
-          alert("Vercel에 설정된 API_KEY가 유효하지 않거나 권한이 없습니다.");
-        }
-      } else {
-        alert(`생성 중 오류 발생: ${msg}`);
-      }
+      alert(`생성 중 오류가 발생했습니다: ${error.message || '알 수 없는 오류'}`);
     } finally {
       setIsLoading(false);
     }
@@ -162,40 +91,9 @@ const App: React.FC = () => {
               <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-none">PSST Builder Deep v2.0</span>
             </div>
           </div>
-          
-          <div className="flex items-center">
-            {/* AI Studio 환경이거나, 키가 아예 없는 경우에만 연결 버튼 표시 */}
-            {isAiStudioEnv || !hasKey ? (
-              <button 
-                type="button"
-                onClick={handleOpenKeyDialog}
-                className={`flex items-center text-xs px-5 py-2.5 rounded-full font-bold border transition-all shadow-md active:scale-95 cursor-pointer hover:shadow-lg ${
-                  hasKey 
-                  ? 'bg-green-600 text-white border-green-700' 
-                  : 'bg-white text-blue-600 border-blue-200 ring-2 ring-blue-50 hover:bg-blue-50'
-                }`}
-              >
-                {hasKey ? (
-                  <>
-                    <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                    </svg>
-                    AI 엔진 연결됨
-                  </>
-                ) : (
-                  <>
-                    <span className="w-2 h-2 bg-blue-500 rounded-full mr-2 animate-pulse"></span>
-                    AI 엔진 연결 필요
-                  </>
-                )}
-              </button>
-            ) : (
-              // Vercel 환경변수로 작동 중일 때 보여줄 깔끔한 배지
-              <div className="flex items-center text-xs px-5 py-2.5 rounded-full font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
-                시스템 엔진 활성
-              </div>
-            )}
+          <div className="flex items-center text-xs px-4 py-2 rounded-full font-bold bg-green-50 text-green-700 border border-green-100">
+            <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+            AI 엔진 가동 중
           </div>
         </div>
       </nav>
@@ -236,9 +134,6 @@ const App: React.FC = () => {
           <p className="text-slate-500 text-sm mb-10 font-medium">(주)소셜위즈 - SocialWiz Inc. Partnership</p>
           <div className="flex justify-center items-center gap-6 text-xs text-blue-600 font-semibold">
             <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noreferrer" className="hover:underline">Billing 안내</a>
-            {isAiStudioEnv && (
-              <button type="button" onClick={handleOpenKeyDialog} className="hover:underline bg-transparent border-none cursor-pointer">API 엔진 재설정</button>
-            )}
           </div>
         </div>
       </footer>
